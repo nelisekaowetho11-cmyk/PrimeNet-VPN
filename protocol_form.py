@@ -1,16 +1,11 @@
 
 PROTOCOL_FORM = r"""
 <div class="card">
+
 <h2>Xray Configuration</h2>
 
 <label>Profile name</label>
 <input name="profile_name" placeholder="My Private Account">
-
-<label>Connection mode</label>
-<select name="connection_mode" id="connection_mode" onchange="buildFields()">
-<option value="Direct">Direct</option>
-<option value="HTTP Payload Proxy">HTTP Payload Proxy</option>
-</select>
 
 <label>Protocol</label>
 <select name="protocol" id="proto" onchange="buildFields()">
@@ -34,9 +29,10 @@ PROTOCOL_FORM = r"""
 <input name="server" required placeholder="Server domain or IP">
 
 <label>Port</label>
-<input name="port" type="number" required placeholder="443">
+<input name="port" type="number" min="1" max="65535" required placeholder="443">
 
 <div id="protocolfields"></div>
+
 <div id="transportfields"></div>
 
 <label>Security</label>
@@ -47,105 +43,233 @@ PROTOCOL_FORM = r"""
 </select>
 
 <div id="securityfields"></div>
-<div id="proxyfields"></div>
+
 </div>
 
 <script>
-function makeField(label,name,placeholder="",type="text"){
- return `<label>${label}</label>
- <input name="${name}" type="${type}" placeholder="${placeholder}">`;
+
+function field(label,name,placeholder="",type="text"){
+
+return `
+<label>${label}</label>
+<input name="${name}" type="${type}" placeholder="${placeholder}">
+`;
+
 }
 
-function makeSelect(label,name,items){
- return `<label>${label}</label>
- <select name="${name}">
- ${items.map(x=>`<option value="${x}">${x}</option>`).join("")}
- </select>`;
+function selectField(label,name,items){
+
+return `
+<label>${label}</label>
+<select name="${name}">
+${items.map(x=>`<option value="${x}">${x}</option>`).join("")}
+</select>
+`;
+
 }
 
 function buildFields(){
- let p=document.getElementById("proto").value;
- let t=document.getElementById("transport").value;
- let s=document.getElementById("security").value;
- let mode=document.getElementById("connection_mode").value;
 
- let ph="";
- let th="";
- let sh="";
- let pr="";
+const p=document.getElementById("proto").value;
+const t=document.getElementById("transport").value;
+const s=document.getElementById("security").value;
 
- if(p==="VLESS"){
-  ph+=makeField("UUID","secret","Enter UUID");
-  ph+=makeField("Flow","flow","xtls-rprx-vision");
- }
+let ph="";
+let th="";
+let sh="";
 
- if(p==="VMESS"){
-  ph+=makeField("UUID","secret","Enter UUID");
-  ph+=makeSelect("Alter ID","alterid",["0","1","16","32"]);
-  ph+=makeSelect("Encryption","encryption",["auto","none","zero"]);
- }
 
- if(p==="TROJAN"){
-  ph+=makeField("Trojan password","secret","Enter password","password");
- }
+if(p==="VLESS"){
 
- if(p==="SHADOWSOCKS"){
-  ph+=makeSelect("Encryption method","method",[
-   "aes-128-gcm",
-   "aes-256-gcm",
-   "chacha20-ietf-poly1305",
-   "2022-blake3-aes-128-gcm",
-   "2022-blake3-aes-256-gcm"
-  ]);
-  ph+=makeField("Shadowsocks password","secret","Enter password","password");
- }
+ph+=field("UUID","secret","Enter UUID");
 
- if(["WebSocket","HTTPUpgrade","XHTTP"].includes(t)){
-  th+=makeField("Path","path","/");
-  th+=makeField("Host header","host","Optional host");
- }
+ph+=field(
+"Flow",
+"flow",
+"xtls-rprx-vision"
+);
 
- if(t==="gRPC"){
-  th+=makeField("Service name","service_name","Service name");
-  th+=makeSelect("gRPC mode","grpc_mode",["gun","multi"]);
- }
+}
 
- if(t==="mKCP"){
-  th+=makeSelect("mKCP header","header_type",[
-   "none","srtp","utp","wechat-video","dtls","wireguard"
-  ]);
-  th+=makeField("Seed","seed","Optional seed");
- }
 
- if(s==="TLS"){
-  sh+=makeField("SNI / Server name","sni","Optional SNI");
-  sh+=makeField("TLS fingerprint","fingerprint","chrome");
-  sh+=makeField("ALPN","alpn","h2,http/1.1");
-  sh+=`<label><input style="width:auto" type="checkbox" name="allow_insecure" value="yes"> Allow insecure certificates</label>`;
- }
+if(p==="VMESS"){
 
- if(s==="REALITY"){
-  sh+=makeField("SNI","sni","Server name");
-  sh+=makeField("Public key","public_key","Reality public key");
-  sh+=makeField("Short ID","short_id","Short ID");
-  sh+=makeField("Fingerprint","fingerprint","chrome");
-  sh+=makeField("SpiderX","spider_x","Optional SpiderX");
- }
+ph+=field("UUID","secret","Enter UUID");
 
- if(mode==="HTTP Payload Proxy"){
-  pr+=`<h3>HTTP Proxy Settings</h3>`;
-  pr+=makeField("HTTP proxy host","proxy_host","Proxy IP or domain");
-  pr+=makeField("Proxy port","proxy_port","8080","number");
-  pr+=`<label>HTTP payload (optional)</label>
-  <textarea name="payload" placeholder="Paste your HTTP payload here"></textarea>`;
- }
+ph+=selectField(
+"Alter ID",
+"alterid",
+["0","1","16","32"]
+);
 
- document.getElementById("protocolfields").innerHTML=ph;
- document.getElementById("transportfields").innerHTML=th;
- document.getElementById("securityfields").innerHTML=sh;
- document.getElementById("proxyfields").innerHTML=pr;
+ph+=selectField(
+"Encryption",
+"encryption",
+["auto","none","zero"]
+);
+
+}
+
+
+if(p==="TROJAN"){
+
+ph+=field(
+"Trojan password",
+"secret",
+"Enter password",
+"password"
+);
+
+}
+
+
+if(p==="SHADOWSOCKS"){
+
+ph+=selectField(
+"Encryption method",
+"method",
+[
+"aes-128-gcm",
+"aes-256-gcm",
+"chacha20-ietf-poly1305",
+"2022-blake3-aes-128-gcm",
+"2022-blake3-aes-256-gcm"
+]
+);
+
+ph+=field(
+"Shadowsocks password",
+"secret",
+"Enter password",
+"password"
+);
+
+}
+
+
+if(
+["WebSocket","HTTPUpgrade","XHTTP"].includes(t)
+){
+
+th+=field("Path","path","/");
+
+th+=field(
+"Host header",
+"host",
+"Optional host"
+);
+
+}
+
+
+if(t==="gRPC"){
+
+th+=field(
+"Service name",
+"service_name",
+"Service name"
+);
+
+th+=selectField(
+"gRPC mode",
+"grpc_mode",
+["gun","multi"]
+);
+
+}
+
+
+if(t==="mKCP"){
+
+th+=selectField(
+"mKCP header",
+"header_type",
+[
+"none",
+"srtp",
+"utp",
+"wechat-video",
+"dtls",
+"wireguard"
+]
+);
+
+th+=field(
+"Seed",
+"seed",
+"Optional seed"
+);
+
+}
+
+
+if(s==="TLS"){
+
+sh+=field(
+"SNI / Server name",
+"sni",
+"Optional SNI"
+);
+
+sh+=field(
+"TLS fingerprint",
+"fingerprint",
+"chrome"
+);
+
+sh+=field(
+"ALPN",
+"alpn",
+"h2,http/1.1"
+);
+
+}
+
+
+if(s==="REALITY"){
+
+sh+=field(
+"SNI",
+"sni",
+"Server name"
+);
+
+sh+=field(
+"Public key",
+"public_key",
+"Reality public key"
+);
+
+sh+=field(
+"Short ID",
+"short_id",
+"Short ID"
+);
+
+sh+=field(
+"Fingerprint",
+"fingerprint",
+"chrome"
+);
+
+sh+=field(
+"SpiderX",
+"spider_x",
+"Optional SpiderX"
+);
+
+}
+
+
+document.getElementById("protocolfields").innerHTML=ph;
+
+document.getElementById("transportfields").innerHTML=th;
+
+document.getElementById("securityfields").innerHTML=sh;
+
 }
 
 buildFields();
+
 </script>
 """
