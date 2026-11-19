@@ -1038,17 +1038,43 @@ def settings():
     )
 
 
+# ==========================================
+# PRIME NET VPN - ANDROID CLIENT API
+# ==========================================
+
+from client_api import register_client_api
+
+register_client_api(
+    app,
+    database,
+    execute,
+    verify_password,
+    make_config,
+    decode_config
+)
+
+
+# ==========================================
 # ERROR PAGE
+# ==========================================
 
 @app.errorhandler(404)
 def not_found(error):
+    if request.path.startswith("/api/"):
+        return {
+            "error": "API endpoint not found.",
+            "code": "not_found"
+        }, 404
+
     return page(
         "Not Found",
         "<div class='card'>Page not found.</div>"
     ), 404
 
 
+# ==========================================
 # START APPLICATION
+# ==========================================
 
 if __name__ == "__main__":
     app.run(
