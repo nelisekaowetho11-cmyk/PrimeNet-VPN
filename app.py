@@ -9,7 +9,9 @@ import base64
 from datetime import datetime, date
 from contextlib import contextmanager
 from functools import wraps
-from urllib.parse import urlsplit, parse_qs, unquote, urlencode, quote
+from urllib.parse import (
+    urlsplit, parse_qs, unquote, urlencode, quote
+)
 
 from flask import (
     Flask, request, redirect, url_for,
@@ -39,6 +41,7 @@ def connect():
     if url:
         import psycopg
         from psycopg.rows import dict_row
+
         url = url.replace("postgres://", "postgresql://", 1)
         return psycopg.connect(url, row_factory=dict_row)
 
@@ -93,7 +96,7 @@ def verify_password(password, stored):
 
 
 # =========================================================
-# DATABASE INITIALIZATION AND MIGRATIONS
+# DATABASE INITIALIZATION
 # =========================================================
 
 def init_db():
@@ -106,6 +109,7 @@ def init_db():
                     password TEXT NOT NULL
                 )
             """)
+
             db.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     id BIGSERIAL PRIMARY KEY,
@@ -144,6 +148,7 @@ def init_db():
                     password TEXT NOT NULL
                 )
             """)
+
             db.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -240,8 +245,7 @@ def get_account(account_id):
 
 def account_limit_value(value):
     try:
-        value = int(value or 0)
-        return max(0, value)
+        return max(0, int(value or 0))
     except (ValueError, TypeError):
         return 0
 
@@ -267,10 +271,7 @@ def account_message(row):
 
 
 def account_status(row):
-    if not row:
-        return "Dead"
-
-    if str(row["status"]).lower() != "active":
+    if not row or str(row["status"]).lower() != "active":
         return "Dead"
 
     try:
@@ -279,6 +280,13 @@ def account_status(row):
         return "Dead"
 
     return "Active" if expiry >= date.today() else "Dead"
+
+
+def load_config(row):
+    try:
+        return json.loads(row["config_json"] or "{}")
+    except (ValueError, TypeError):
+        return {}
 
 
 # =========================================================
@@ -324,7 +332,9 @@ def decode_config(link):
                 "secret": unquote(parsed.username or ""),
                 "transport": query.get("type", ["tcp"])[0],
                 "security": query.get("security", ["none"])[0],
-                "sni": query.get("sni", query.get("serverName", [""]))[0],
+                "sni": query.get(
+                    "sni", query.get("serverName", [""])
+                )[0],
                 "path": query.get("path", [""])[0],
                 "host": query.get("host", [""])[0],
                 "flow": query.get("flow", [""])[0],
@@ -370,6 +380,48 @@ def decode_config(link):
 
 
 # =========================================================
+# MANUAL CONFIGURATION VALIDATION
+# =========================================================
+
+def validate_manual_config(config, protocol):
+    proxy = str(config.get("proxy", "")).strip()
+    proxy_port = str(config.get("proxy_port", "8080")).strip()
+
+    mux = str(config.get("mux", "false")).strip().lower()
+
+    if proxy and proxy_port != "8080":
+        return "Proxy port must be 8080."
+
+    allowed_mux = ("true", "false", "on", "off", "1", "0")
+
+    if mux not in allowed_mux:
+        return "Invalid Mux setting."
+
+    config["proxy"] = proxy
+    config["proxy_port"] = "8080" if proxy else proxy_port
+    config["mux"] = (
+        "true" if mux in ("true", "on", "1") else "false"
+    )
+
+    config["protocol"] = protocol
+    config["mode"] = "manual"
+
+    if protocol == "SHADOWSOCKS":
+        config["transport"] = ""
+        config["security"] = ""
+
+    security = str(config.get("security", "")).lower()
+
+    if security == "reality" and protocol != "VLESS":
+        return "REALITY is currently supported only with VLESS."
+
+    if protocol == "VMESS" and security == "reality":
+        return "VMess REALITY is not supported by this panel."
+
+    return None
+
+
+# =========================================================
 # CONFIGURATION GENERATOR
 # =========================================================
 
@@ -383,6 +435,13 @@ def make_config(config):
     secret = str(config.get("secret", "")).strip()
 
     if not server or not port or not secret:
+        return ""
+
+    try:
+        port_number = int(port)
+        if not 1 <= port_number <= 65535:
+            return ""
+    except (ValueError, TypeError):
         return ""
 
     profile = quote(
@@ -419,6 +478,8 @@ def make_config(config):
         if value:
             query[target] = str(value)
 
+    # Extra panel settings are intentionally not added
+    # to share links unless the client supports them.
     if protocol == "VLESS":
         query["encryption"] = "none"
 
@@ -490,7 +551,11 @@ SETTING_LABELS = {
     "seed": "mKCP Seed",
     "alterid": "Alter ID",
     "encryption": "Encryption",
-    "method": "Shadowsocks Method"
+    "method": "Shadowsocks Method",
+    "proxy": "Proxy",
+    "proxy_port": "Proxy Port",
+    "payload": "Payload",
+    "mux": "Mux"
 }
 
 
@@ -501,6 +566,12 @@ def get_saved_settings(config):
         value = config.get(key)
 
         if value is None or str(value).strip() == "":
+            continue
+
+        if key == "mux":
+            value = "Enabled" if str(value).lower() == "true" else "Disabled"
+
+        if key == "proxy_port" and not config.get("proxy"):
             continue
 
         result.append({
@@ -887,6 +958,9 @@ def validate_customer_fields():
     if not username:
         return None, "Enter a customer username."
 
+    if len(username) > 100:
+        return None, "Customer username is too long."
+
     if len(password) < 8:
         return None, "Customer password must be at least 8 characters."
 
@@ -938,17 +1012,19 @@ def manual():
             flash("Select a supported protocol.")
             return redirect(url_for("manual"))
 
+        excluded = {
+            "username", "password", "expires",
+            "creator_name", "ip_limit"
+        }
+
         config = {
             key: value.strip()
             for key, value in request.form.items()
-            if key not in (
-                "username", "password", "expires",
-                "creator_name", "ip_limit"
-            )
+            if key not in excluded
         }
 
-        config["mode"] = "manual"
         config["protocol"] = protocol
+        config["mode"] = "manual"
 
         if not config.get("server") or not config.get("port"):
             flash("Server and port are required.")
@@ -958,7 +1034,7 @@ def manual():
             port = int(config["port"])
             if not 1 <= port <= 65535:
                 raise ValueError()
-        except ValueError:
+        except (ValueError, TypeError):
             flash("Enter a valid server port.")
             return redirect(url_for("manual"))
 
@@ -966,8 +1042,11 @@ def manual():
             flash("Enter the protocol credential.")
             return redirect(url_for("manual"))
 
-        # Shadowsocks uses its own TCP connection settings.
-        if protocol != "SHADOWSOCKS":
+        if protocol == "SHADOWSOCKS":
+            if not config.get("method"):
+                flash("Choose a Shadowsocks encryption method.")
+                return redirect(url_for("manual"))
+        else:
             if not config.get("transport"):
                 flash("Choose a transport.")
                 return redirect(url_for("manual"))
@@ -975,6 +1054,12 @@ def manual():
             if not config.get("security"):
                 flash("Choose a security setting.")
                 return redirect(url_for("manual"))
+
+        problem = validate_manual_config(config, protocol)
+
+        if problem:
+            flash(problem)
+            return redirect(url_for("manual"))
 
         try:
             account_id = save_account(
@@ -988,7 +1073,10 @@ def manual():
             )
         except Exception:
             app.logger.exception("Manual account creation failed")
-            flash("Could not create account. Check whether username already exists.")
+            flash(
+                "Could not create account. "
+                "Check whether username already exists."
+            )
             return redirect(url_for("manual"))
 
         return account_created(account_id)
@@ -1045,6 +1133,11 @@ def clipboard():
             return redirect(url_for("clipboard"))
 
         link = request.form.get("config", "").strip()
+
+        if len(link) > 50000:
+            flash("Configuration link is too large.")
+            return redirect(url_for("clipboard"))
+
         parsed = decode_config(link)
 
         if not parsed:
@@ -1069,7 +1162,10 @@ def clipboard():
             )
         except Exception:
             app.logger.exception("Clipboard account creation failed")
-            flash("Could not create account. Check whether username already exists.")
+            flash(
+                "Could not create account. "
+                "Check whether username already exists."
+            )
             return redirect(url_for("clipboard"))
 
         return account_created(account_id)
@@ -1128,7 +1224,7 @@ def account(account_id):
         flash("Account not found.")
         return redirect(url_for("active_accounts"))
 
-    config = json.loads(row["config_json"] or "{}")
+    config = load_config(row)
     output = make_config(config)
     settings = get_saved_settings(config)
     message = account_message(row)
@@ -1164,12 +1260,17 @@ def account(account_id):
 
         <div class="card">
         <h2>VPN Configuration</h2>
+
+        {% if output %}
         <div class="output" id="configOutput">{{ output }}</div>
         <button onclick="copyText(
             document.getElementById('configOutput').innerText,
             'configStatus'
         )">Copy Configuration</button>
         <p id="configStatus" class="small"></p>
+        {% else %}
+        <p class="red">No valid share link could be generated from this record.</p>
+        {% endif %}
         </div>
 
         <div class="card">
@@ -1183,6 +1284,10 @@ def account(account_id):
         {% else %}
         <p class="small">No additional settings recorded.</p>
         {% endif %}
+        <p class="small">
+        These are the values saved by the panel.
+        Settings not supported by the VPN client may not affect the connection.
+        </p>
         </div>
 
         <a class="btn secondary" href="/active">Active Accounts</a>
@@ -1293,7 +1398,6 @@ def dead_accounts():
     )
 
 
-# Keep the old records URL working.
 @app.route("/records")
 @login_required
 def records():
@@ -1337,16 +1441,28 @@ def kill():
                     (stamp, row["id"])
                 )
 
-                # Revoke every session belonging to this account.
+                # Use a savepoint so a missing session table
+                # cannot invalidate the account-kill transaction.
                 try:
+                    execute(db, "SAVEPOINT revoke_sessions")
+
                     execute(
                         db,
                         "DELETE FROM client_sessions WHERE account_id=?",
                         (row["id"],)
                     )
+
+                    execute(db, "RELEASE SAVEPOINT revoke_sessions")
+
                 except Exception:
-                    app.logger.exception(
-                        "Could not revoke client sessions"
+                    try:
+                        execute(db, "ROLLBACK TO SAVEPOINT revoke_sessions")
+                        execute(db, "RELEASE SAVEPOINT revoke_sessions")
+                    except Exception:
+                        pass
+
+                    app.logger.warning(
+                        "Client session cleanup was unavailable."
                     )
 
                 flash("Account killed. Its record has been preserved.")
