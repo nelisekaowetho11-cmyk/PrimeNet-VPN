@@ -4,18 +4,18 @@ PROTOCOL_FORM = r"""
   <h2>Server Configuration</h2>
 
   <label>Profile name</label>
-  <input name="profile_name" placeholder="My PrimeNet server">
+  <input name="profile_name" placeholder="My PrimeNet server" required>
 
   <label>Protocol</label>
   <select name="protocol" id="proto" onchange="buildFields()" required>
     <option value="VLESS">VLESS</option>
+    <option value="VMESS">VMess</option>
     <option value="TROJAN">Trojan</option>
     <option value="SHADOWSOCKS">Shadowsocks</option>
-    <option value="VMESS">VMess</option>
   </select>
 
-  <label>Server address</label>
-  <input name="server" required placeholder="Server domain or IP">
+  <label>Target server</label>
+  <input name="server" required placeholder="Domain or IP">
 
   <label>Port</label>
   <input name="port" type="number" min="1" max="65535" required placeholder="443">
@@ -23,7 +23,7 @@ PROTOCOL_FORM = r"""
   <div id="protocolfields"></div>
 
   <div id="networkBlock">
-    <label>Network</label>
+    <label>Transport</label>
     <select name="transport" id="transport" onchange="buildFields()">
       <option value="tcp">TCP</option>
       <option value="ws">WebSocket</option>
@@ -31,6 +31,7 @@ PROTOCOL_FORM = r"""
       <option value="httpupgrade">HTTPUpgrade</option>
       <option value="xhttp">XHTTP</option>
       <option value="kcp">mKCP</option>
+      <option value="http">HTTP/2</option>
     </select>
     <div id="transportfields"></div>
   </div>
@@ -44,6 +45,26 @@ PROTOCOL_FORM = r"""
     </select>
     <div id="securityfields"></div>
   </div>
+
+  <div id="extraBlock">
+    <h3>Additional Settings</h3>
+    <label>Proxy (optional)</label>
+    <input name="proxy" placeholder="Proxy address">
+
+    <label>Proxy port</label>
+    <input name="proxy_port" type="number" min="1" max="65535"
+           value="8080" placeholder="8080">
+
+    <label>Payload (optional)</label>
+    <textarea name="payload" rows="3"
+              placeholder="Enter payload"></textarea>
+
+    <label>Mux</label>
+    <select name="mux" id="mux">
+      <option value="false">Disable</option>
+      <option value="true">Enable</option>
+    </select>
+  </div>
 </div>
 
 <script>
@@ -55,24 +76,26 @@ function inputField(label,name,placeholder="",type="text"){
 function selectField(label,name,items){
   return `<label>${label}</label>
   <select name="${name}">
-  ${items.map(x=>`<option value="${x.value}">${x.label}</option>`).join("")}
+    ${items.map(x =>
+      `<option value="${x.value}">${x.label}</option>`
+    ).join("")}
   </select>`;
 }
 
 function buildFields(){
   const p=document.getElementById("proto").value;
-  const t=document.getElementById("transport").value;
-  const s=document.getElementById("security").value;
+  const transport=document.getElementById("transport");
+  const security=document.getElementById("security");
+  let t=transport.value;
+  let s=security.value;
 
   let pf="",tf="",sf="";
 
+  const ss=p==="SHADOWSOCKS";
+
   if(p==="VLESS"){
     pf+=inputField("UUID","secret","VLESS UUID");
-    pf+=inputField("Flow (optional)","flow","e.g. xtls-rprx-vision");
-  }
-
-  if(p==="TROJAN"){
-    pf+=inputField("Trojan password","secret","Password","password");
+    pf+=inputField("Flow (optional)","flow","xtls-rprx-vision");
   }
 
   if(p==="VMESS"){
@@ -90,7 +113,11 @@ function buildFields(){
     ]);
   }
 
-  if(p==="SHADOWSOCKS"){
+  if(p==="TROJAN"){
+    pf+=inputField("Trojan password","secret","Password","password");
+  }
+
+  if(ss){
     pf+=selectField("Encryption method","method",[
       {value:"aes-128-gcm",label:"aes-128-gcm"},
       {value:"aes-256-gcm",label:"aes-256-gcm"},
@@ -133,32 +160,51 @@ function buildFields(){
     ]);
   }
 
+  if(t==="http"){
+    tf+=inputField("HTTP host (optional)","host","Host name");
+    tf+=inputField("HTTP path (optional)","path","/");
+  }
+
   if(s==="tls"){
-    sf+=inputField("Server name (SNI)","sni","example.com");
+    sf+=inputField("Server Name Indication (SNI)","sni","example.com");
     sf+=inputField("TLS fingerprint (optional)","fingerprint","chrome");
     sf+=inputField("ALPN (optional)","alpn","h2,http/1.1");
   }
 
   if(s==="reality"){
-    sf+=inputField("Server name (SNI)","sni","example.com");
+    sf+=inputField("Server Name Indication (SNI)","sni","example.com");
     sf+=inputField("REALITY public key","public_key","Public key");
     sf+=inputField("REALITY short ID","short_id","Short ID");
     sf+=inputField("Fingerprint","fingerprint","chrome");
     sf+=inputField("SpiderX (optional)","spider_x","/");
   }
 
-  const ss=(p==="SHADOWSOCKS");
+  // REALITY is offered only for VLESS.
+  const realityOption=security.querySelector(
+    'option[value="reality"]'
+  );
+  realityOption.disabled=(p!=="VLESS");
 
-  document.getElementById("networkBlock").style.display=ss?"none":"block";
-  document.getElementById("securityBlock").style.display=ss?"none":"block";
+  if(p!=="VLESS" && s==="reality"){
+    security.value="none";
+    s="none";
+    sf="";
+  }
 
   document.getElementById("protocolfields").innerHTML=pf;
   document.getElementById("transportfields").innerHTML=tf;
   document.getElementById("securityfields").innerHTML=sf;
 
+  document.getElementById("networkBlock").style.display=
+    ss?"none":"block";
+  document.getElementById("securityBlock").style.display=
+    ss?"none":"block";
+  document.getElementById("extraBlock").style.display=
+    ss?"none":"block";
+
   if(ss){
-    document.getElementById("transport").value="tcp";
-    document.getElementById("security").value="none";
+    transport.value="tcp";
+    security.value="none";
   }
 }
 
