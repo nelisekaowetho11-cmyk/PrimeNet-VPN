@@ -1,4 +1,3 @@
-
 import base64
 import hashlib
 import json
@@ -14,7 +13,6 @@ def register_client_api(app, database, execute, verify_password,
 
     api = Blueprint("client_api", __name__)
 
-    # Keep the existing database and create only the API tables if missing.
     with database() as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS client_sessions (
@@ -62,7 +60,6 @@ def register_client_api(app, database, execute, verify_password,
     def device_headers():
         device_id = request.headers.get("X-Device-Id", "").strip()
 
-        # Stable fallback for older app versions that do not send an ID.
         if not device_id or len(device_id) > 128:
             identity = (
                 request.headers.get("User-Agent", "unknown")
@@ -140,7 +137,6 @@ def register_client_api(app, database, execute, verify_password,
         } for r in rows]
 
     def active_device_count(account_id):
-        # A device occupies a slot only while it has a live app session.
         with database() as db:
             rows = execute(
                 db,
@@ -212,6 +208,49 @@ def register_client_api(app, database, execute, verify_password,
             "owner": row_value(row, "creator_name", "owner")
         }
 
+    def get_client_options(saved):
+        proxy = str(saved.get("proxy") or "").strip()
+        payload = str(saved.get("payload") or "")
+
+        raw_mux = saved.get("mux", False)
+
+        if isinstance(raw_mux, bool):
+            mux = raw_mux
+        else:
+            value = str(raw_mux or "false").strip().lower()
+
+            if value in ("true", "1", "yes", "on"):
+                mux = True
+            elif value in ("false", "0", "no", "off", ""):
+                mux = False
+            else:
+                raise ValueError("Invalid Mux setting.")
+
+        proxy_port = None
+
+        if proxy:
+            if (
+                "://" in proxy
+                or any(char.isspace() for char in proxy)
+                or "/" in proxy
+            ):
+                raise ValueError("Invalid proxy address.")
+
+            try:
+                proxy_port = int(saved.get("proxy_port") or 8080)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid proxy port.")
+
+            if proxy_port != 8080:
+                raise ValueError("Proxy port must be 8080.")
+
+        return {
+            "proxy": proxy,
+            "proxy_port": proxy_port,
+            "payload": payload,
+            "mux": mux
+        }
+
     def decode_vmess(link):
         raw = link.split("://", 1)[1]
         raw += "=" * (-len(raw) % 4)
@@ -233,7 +272,6 @@ def register_client_api(app, database, execute, verify_password,
         }
 
     def parse_link(link):
-        # Prefer the panel's own decoder when it returns useful data.
         try:
             result = decode_config(link)
             if isinstance(result, dict) and result:
@@ -284,8 +322,8 @@ def register_client_api(app, database, execute, verify_password,
                     parsed["password"] = unquote(uri.username or "")
 
             elif scheme == "ss":
-                # SIP002 format: ss://base64(method:password)@host:port
                 user_info = uri.username or ""
+
                 if not user_info and uri.netloc:
                     token = uri.netloc.split("@", 1)[0]
                     token += "=" * (-len(token) % 4)
@@ -482,6 +520,11 @@ def register_client_api(app, database, execute, verify_password,
     def server_data(row):
         try:
             saved = json.loads(row["config_json"] or "{}")
+
+            if not isinstance(saved, dict):
+                raise ValueError("Saved configuration is invalid.")
+
+            options = get_client_options(saved)
             link = make_config(saved)
 
             if not isinstance(link, str) or not link.startswith(
@@ -490,6 +533,7 @@ def register_client_api(app, database, execute, verify_password,
                 raise ValueError("The saved VPN link is missing or invalid.")
 
             parsed = parse_link(link)
+
             outbound, protocol, address, port, transport, security = (
                 build_outbound(link, parsed)
             )
@@ -511,7 +555,8 @@ def register_client_api(app, database, execute, verify_password,
                 "address": address,
                 "port": port,
                 "link": link,
-                "outbound": outbound
+                "outbound": outbound,
+                "client_options": options
             }]
 
         except Exception:
@@ -622,7 +667,6 @@ def register_client_api(app, database, execute, verify_password,
         device_id, _, _, _ = device_headers()
         limit = account_limit(row)
 
-        # Existing device sessions do not consume an additional slot.
         with database() as db:
             existing = execute(
                 db,
@@ -713,8 +757,6 @@ def register_client_api(app, database, execute, verify_password,
 
         row, _ = authenticated()
 
-        # Permit account-owner authentication when the device limit
-        # prevents a normal app login.
         if not row:
             username = str(data.get("username", "")).strip()
             password = str(data.get("password", ""))
