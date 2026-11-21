@@ -15,10 +15,11 @@ PROTOCOL_FORM = r"""
   </select>
 
   <label>Target server</label>
-  <input name="server" required placeholder="Domain or IP">
+  <input name="server" placeholder="Domain or IP" required>
 
   <label>Port</label>
-  <input name="port" type="number" min="1" max="65535" required placeholder="443">
+  <input name="port" type="number" min="1" max="65535"
+         placeholder="443" required>
 
   <div id="protocolfields"></div>
 
@@ -29,9 +30,6 @@ PROTOCOL_FORM = r"""
       <option value="ws">WebSocket</option>
       <option value="grpc">gRPC</option>
       <option value="httpupgrade">HTTPUpgrade</option>
-      <option value="xhttp">XHTTP</option>
-      <option value="kcp">mKCP</option>
-      <option value="http">HTTP/2</option>
     </select>
     <div id="transportfields"></div>
   </div>
@@ -48,16 +46,18 @@ PROTOCOL_FORM = r"""
 
   <div id="extraBlock">
     <h3>Additional Settings</h3>
-    <label>Proxy (optional)</label>
-    <input name="proxy" placeholder="Proxy address">
 
-    <label>Proxy port</label>
-    <input name="proxy_port" type="number" min="1" max="65535"
-           value="8080" placeholder="8080">
+    <label>Proxy IP / Host (optional)</label>
+    <input name="proxy" placeholder="Example: 102.132.104.41">
+
+    <label>Proxy Port (optional)</label>
+    <input name="proxy_port" type="number"
+           min="1" max="65535" value="8080"
+           placeholder="8080">
 
     <label>Payload (optional)</label>
-    <textarea name="payload" rows="3"
-              placeholder="Enter payload"></textarea>
+    <textarea name="payload" rows="4"
+              placeholder="Enter your custom payload"></textarea>
 
     <label>Mux</label>
     <select name="mux" id="mux">
@@ -68,12 +68,12 @@ PROTOCOL_FORM = r"""
 </div>
 
 <script>
-function inputField(label,name,placeholder="",type="text"){
+function inputField(label, name, placeholder="", type="text"){
   return `<label>${label}</label>
   <input name="${name}" type="${type}" placeholder="${placeholder}">`;
 }
 
-function selectField(label,name,items){
+function selectField(label, name, items){
   return `<label>${label}</label>
   <select name="${name}">
     ${items.map(x =>
@@ -83,128 +83,145 @@ function selectField(label,name,items){
 }
 
 function buildFields(){
-  const p=document.getElementById("proto").value;
-  const transport=document.getElementById("transport");
-  const security=document.getElementById("security");
-  let t=transport.value;
-  let s=security.value;
+  const p = document.getElementById("proto").value;
+  const transport = document.getElementById("transport");
+  const security = document.getElementById("security");
 
-  let pf="",tf="",sf="";
+  let t = transport.value;
+  let s = security.value;
 
-  const ss=p==="SHADOWSOCKS";
+  let pf = "";
+  let tf = "";
+  let sf = "";
 
-  if(p==="VLESS"){
-    pf+=inputField("UUID","secret","VLESS UUID");
-    pf+=inputField("Flow (optional)","flow","xtls-rprx-vision");
+  const ss = p === "SHADOWSOCKS";
+
+  if(p === "VLESS"){
+    pf += inputField("UUID", "secret", "VLESS UUID");
+    pf += inputField(
+      "Flow (optional)", "flow", "xtls-rprx-vision"
+    );
   }
 
-  if(p==="VMESS"){
-    pf+=inputField("UUID","secret","VMess UUID");
-    pf+=selectField("Alter ID","alterid",[
+  if(p === "VMESS"){
+    pf += inputField("UUID", "secret", "VMess UUID");
+
+    pf += selectField("Alter ID", "alterid", [
       {value:"0",label:"0"},
       {value:"1",label:"1"},
       {value:"16",label:"16"},
       {value:"32",label:"32"}
     ]);
-    pf+=selectField("Encryption","encryption",[
+
+    pf += selectField("Encryption", "encryption", [
       {value:"auto",label:"auto"},
       {value:"none",label:"none"},
       {value:"zero",label:"zero"}
     ]);
   }
 
-  if(p==="TROJAN"){
-    pf+=inputField("Trojan password","secret","Password","password");
+  if(p === "TROJAN"){
+    pf += inputField(
+      "Trojan Password", "secret", "Password", "password"
+    );
   }
 
   if(ss){
-    pf+=selectField("Encryption method","method",[
+    pf += selectField("Encryption Method", "method", [
       {value:"aes-128-gcm",label:"aes-128-gcm"},
       {value:"aes-256-gcm",label:"aes-256-gcm"},
-      {value:"chacha20-ietf-poly1305",label:"chacha20-ietf-poly1305"},
-      {value:"2022-blake3-aes-128-gcm",label:"2022-blake3-aes-128-gcm"},
-      {value:"2022-blake3-aes-256-gcm",label:"2022-blake3-aes-256-gcm"}
+      {value:"chacha20-ietf-poly1305",
+       label:"chacha20-ietf-poly1305"},
+      {value:"2022-blake3-aes-128-gcm",
+       label:"2022-blake3-aes-128-gcm"},
+      {value:"2022-blake3-aes-256-gcm",
+       label:"2022-blake3-aes-256-gcm"}
     ]);
-    pf+=inputField("Shadowsocks password","secret","Password","password");
+
+    pf += inputField(
+      "Shadowsocks Password", "secret", "Password", "password"
+    );
   }
 
-  if(["ws","httpupgrade","xhttp"].includes(t)){
-    tf+=inputField("Path","path","/");
-    tf+=inputField("Host header (optional)","host","Host name");
+  if(t === "ws" || t === "httpupgrade"){
+    tf += inputField("Path", "path", "/");
+    tf += inputField(
+      "Host Header (optional)", "host", "Host name"
+    );
   }
 
-  if(t==="grpc"){
-    tf+=inputField("gRPC service name","service_name","Service name");
-    tf+=selectField("gRPC mode","grpc_mode",[
+  if(t === "grpc"){
+    tf += inputField(
+      "gRPC Service Name", "service_name", "Service name"
+    );
+
+    tf += selectField("gRPC Mode", "grpc_mode", [
       {value:"gun",label:"gun"},
       {value:"multi",label:"multi"}
     ]);
   }
 
-  if(t==="kcp"){
-    tf+=selectField("mKCP header","header_type",[
-      {value:"none",label:"none"},
-      {value:"srtp",label:"srtp"},
-      {value:"utp",label:"utp"},
-      {value:"wechat-video",label:"wechat-video"},
-      {value:"dtls",label:"dtls"},
-      {value:"wireguard",label:"wireguard"}
-    ]);
-    tf+=inputField("mKCP seed (optional)","seed","Seed");
+  if(s === "tls"){
+    sf += inputField(
+      "Server Name Indication (SNI)", "sni", "example.com"
+    );
+
+    sf += inputField(
+      "TLS Fingerprint (optional)", "fingerprint", "chrome"
+    );
+
+    sf += inputField(
+      "ALPN (optional)", "alpn", "h2,http/1.1"
+    );
   }
 
-  if(t==="tcp"){
-    tf+=selectField("TCP header type","header_type",[
-      {value:"none",label:"none"},
-      {value:"http",label:"http"}
-    ]);
+  if(s === "reality"){
+    sf += inputField(
+      "Server Name Indication (SNI)", "sni", "example.com"
+    );
+
+    sf += inputField(
+      "REALITY Public Key", "public_key", "Public key"
+    );
+
+    sf += inputField(
+      "REALITY Short ID", "short_id", "Short ID"
+    );
+
+    sf += inputField(
+      "Fingerprint", "fingerprint", "chrome"
+    );
+
+    sf += inputField(
+      "SpiderX (optional)", "spider_x", "/"
+    );
   }
 
-  if(t==="http"){
-    tf+=inputField("HTTP host (optional)","host","Host name");
-    tf+=inputField("HTTP path (optional)","path","/");
-  }
-
-  if(s==="tls"){
-    sf+=inputField("Server Name Indication (SNI)","sni","example.com");
-    sf+=inputField("TLS fingerprint (optional)","fingerprint","chrome");
-    sf+=inputField("ALPN (optional)","alpn","h2,http/1.1");
-  }
-
-  if(s==="reality"){
-    sf+=inputField("Server Name Indication (SNI)","sni","example.com");
-    sf+=inputField("REALITY public key","public_key","Public key");
-    sf+=inputField("REALITY short ID","short_id","Short ID");
-    sf+=inputField("Fingerprint","fingerprint","chrome");
-    sf+=inputField("SpiderX (optional)","spider_x","/");
-  }
-
-  // REALITY is offered only for VLESS.
-  const realityOption=security.querySelector(
+  const realityOption = security.querySelector(
     'option[value="reality"]'
   );
-  realityOption.disabled=(p!=="VLESS");
 
-  if(p!=="VLESS" && s==="reality"){
-    security.value="none";
-    s="none";
-    sf="";
+  realityOption.disabled = p !== "VLESS";
+
+  if(p !== "VLESS" && s === "reality"){
+    security.value = "none";
+    s = "none";
+    sf = "";
   }
 
-  document.getElementById("protocolfields").innerHTML=pf;
-  document.getElementById("transportfields").innerHTML=tf;
-  document.getElementById("securityfields").innerHTML=sf;
+  document.getElementById("protocolfields").innerHTML = pf;
+  document.getElementById("transportfields").innerHTML = tf;
+  document.getElementById("securityfields").innerHTML = sf;
 
-  document.getElementById("networkBlock").style.display=
-    ss?"none":"block";
-  document.getElementById("securityBlock").style.display=
-    ss?"none":"block";
-  document.getElementById("extraBlock").style.display=
-    ss?"none":"block";
+  document.getElementById("networkBlock").style.display =
+    ss ? "none" : "block";
+
+  document.getElementById("securityBlock").style.display =
+    ss ? "none" : "block";
 
   if(ss){
-    transport.value="tcp";
-    security.value="none";
+    transport.value = "tcp";
+    security.value = "none";
   }
 }
 
